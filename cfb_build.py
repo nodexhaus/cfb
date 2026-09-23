@@ -647,10 +647,17 @@ done_weeks = sorted(int(w) for w in pbp[S].week.unique()) if len(pbp[S]) else []
 W = args.week or ((max(done_weeks) + 1) if done_weeks else 1)
 
 
+PLAYED = set(str(g) for g in pbp[S].game_id.unique()) if len(pbp[S]) else set()
+NOW = dt.datetime.now(dt.timezone.utc)
+
+
 def espn_slate(week):
     try:
-        req = urllib.request.Request(ESPN.format(week=week), headers={"User-Agent": "Mozilla/5.0"})
-        js = json.load(urllib.request.urlopen(req, timeout=30))
+        if os.environ.get("CFB_ESPN_FILE"):
+            js = json.load(open(os.environ["CFB_ESPN_FILE"].format(week=week)))
+        else:
+            req = urllib.request.Request(ESPN.format(week=week), headers={"User-Agent": "Mozilla/5.0"})
+            js = json.load(urllib.request.urlopen(req, timeout=30))
     except Exception as e:
         print("  ESPN feed unavailable:", e); return None
     games = []
@@ -669,7 +676,12 @@ def espn_slate(week):
             try: return float(str(x).replace("o", "").replace("u", ""))
             except Exception: return None
         ps, tt = o.get("pointSpread", {}), o.get("total", {})
-        done = bool(((ev.get("status") or {}).get("type") or {}).get("completed"))
+        try:
+            kick = dt.datetime.fromisoformat(str(ev.get("date")).replace("Z", "+00:00"))
+        except Exception:
+            kick = None
+        done = (bool(((ev.get("status") or {}).get("type") or {}).get("completed")) or str(ev["id"]) in PLAYED
+                or (kick is not None and kick < NOW - dt.timedelta(hours=4)))
         games.append(dict(id=str(ev["id"]), date=ev.get("date"), home=str(h["id"]), away=str(a["id"]), completed=done,
                           spread=None if spread is None else -float(spread), total=None if total is None else float(total),
                           home_spread_odds=num(ps.get("home", {}).get("close", {}).get("odds")), away_spread_odds=num(ps.get("away", {}).get("close", {}).get("odds")),
