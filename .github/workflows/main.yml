@@ -1,0 +1,50 @@
+name: Rebuild CFB Props
+
+on:
+  schedule:
+    # Every morning at 9:00 AM Eastern (13:00 UTC): last week's results, new lines
+    - cron: "0 13 * * *"
+    # Saturdays: every 2 hours from 8 AM to 6 PM Eastern for line moves before kickoffs
+    - cron: "0 12-22/2 * * 6"
+    # Thursday and Friday afternoons, ahead of midweek games
+    - cron: "0 19 * * 4,5"
+  workflow_dispatch: {}   # "Run workflow" button for a manual rebuild
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      # Past seasons never change, so keep them between runs
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: cfb-data-${{ github.run_id }}
+          restore-keys: cfb-data-
+      - run: python cfb_build.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
